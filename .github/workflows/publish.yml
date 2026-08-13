@@ -25,13 +25,34 @@ jobs:
           repository: Langgraph-Toolkit/core
           ref: main
           path: .ci/core
+      - uses: actions/checkout@v4
+        with:
+          repository: Langgraph-Toolkit/mcp
+          ref: main
+          path: .ci/mcp
       - name: Install core dependency
         working-directory: .ci/core
         run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
       - name: Build core dependency
         working-directory: .ci/core
         run: npm run build
-      - run: npm install --ignore-scripts --no-audit --no-fund --no-save --package-lock=false ./.ci/core
+      - name: Point MCP core dependency at checkout
+        working-directory: .ci/mcp
+        env:
+          LOCAL_CORE: ${{ github.workspace }}/.ci/core
+        run: node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("package.json","utf8")); p.dependencies["@langgraph-toolkit/core"]=`file:${process.env.LOCAL_CORE}`; fs.writeFileSync("package.json", JSON.stringify(p,null,2)+"\n");'
+      - name: Install MCP dependency
+        working-directory: .ci/mcp
+        run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      - name: Build MCP dependency
+        working-directory: .ci/mcp
+        run: npm run build
+      - name: Point community dependencies at checkouts
+        env:
+          LOCAL_CORE: ${{ github.workspace }}/.ci/core
+          LOCAL_MCP: ${{ github.workspace }}/.ci/mcp
+        run: node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("package.json","utf8")); p.dependencies["@langgraph-toolkit/core"]=`file:${process.env.LOCAL_CORE}`; p.dependencies["@langgraph-toolkit/mcp"]=`file:${process.env.LOCAL_MCP}`; fs.writeFileSync("package.json", JSON.stringify(p,null,2)+"\n");'
+      - run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
       - run: npm run build
       - run: npm run test --if-present
 
@@ -54,12 +75,33 @@ jobs:
           repository: Langgraph-Toolkit/core
           ref: main
           path: .ci/core
+      - uses: actions/checkout@v4
+        with:
+          repository: Langgraph-Toolkit/mcp
+          ref: main
+          path: .ci/mcp
       - name: Install core dependency
         working-directory: .ci/core
         run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
       - name: Build core dependency
         working-directory: .ci/core
         run: npm run build
-      - run: npm install --ignore-scripts --no-audit --no-fund --no-save --package-lock=false ./.ci/core
+      - name: Point MCP core dependency at checkout
+        working-directory: .ci/mcp
+        env:
+          LOCAL_CORE: ${{ github.workspace }}/.ci/core
+        run: node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("package.json","utf8")); p.dependencies["@langgraph-toolkit/core"]=`file:${process.env.LOCAL_CORE}`; fs.writeFileSync("package.json", JSON.stringify(p,null,2)+"\n");'
+      - name: Install MCP dependency
+        working-directory: .ci/mcp
+        run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      - name: Build MCP dependency
+        working-directory: .ci/mcp
+        run: npm run build
+      - name: Point community dependencies at checkouts
+        env:
+          LOCAL_CORE: ${{ github.workspace }}/.ci/core
+          LOCAL_MCP: ${{ github.workspace }}/.ci/mcp
+        run: node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("package.json","utf8")); p.dependencies["@langgraph-toolkit/core"]=`file:${process.env.LOCAL_CORE}`; p.dependencies["@langgraph-toolkit/mcp"]=`file:${process.env.LOCAL_MCP}`; fs.writeFileSync("package.json", JSON.stringify(p,null,2)+"\n");'
+      - run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
       - run: npm run build
       - run: npm publish --access public --provenance
