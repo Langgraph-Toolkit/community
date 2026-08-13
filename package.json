@@ -1,0 +1,43 @@
+{
+  "name": "@langgraph-toolkit/community",
+  "version": "0.1.0",
+  "description": "Optional community model provider presets for Langgraph-Toolkit, including Hugging Face and OpenAI-compatible open-source deployments.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "langgraph",
+    "langgraph-toolkit",
+    "huggingface",
+    "open-source-models",
+    "lora",
+    "fine-tuning",
+    "ollama",
+    "vllm",
+    "tgi"
+  ],
+  "dependencies": {
+    "@langgraph-toolkit/core": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  },
+  "license": "MIT"
+}
