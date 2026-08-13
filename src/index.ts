@@ -19,3 +19,6 @@ export type {
   OpenAICompatibleProfile,
   ProviderEnvironment,
 } from "./providers.js";
+
+export { createCommunityDatabaseMcpAgent } from "./database-agent.js";
+export type { CommunityDatabaseMcpAgentOptions } from "./database-agent.js";

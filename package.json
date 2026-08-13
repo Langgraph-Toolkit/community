@@ -32,7 +32,8 @@
     "tgi"
   ],
   "dependencies": {
-    "@langgraph-toolkit/core": "0.1.0"
+    "@langgraph-toolkit/core": "0.1.0",
+    "@langgraph-toolkit/mcp": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^20",
