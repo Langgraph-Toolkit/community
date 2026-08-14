@@ -12,12 +12,12 @@ Core and MCP remain useful without this package. Add Community when the applicat
 
 ## Provider inference keeps resources short
 
-The community wrapper checks explicit provider options first, then environment variables, and finally a deterministic fallback. The database-chat resource can therefore stay focused on its MCP boundary and business composition.
+The community provider layer checks explicit provider options first, then environment variables, and finally a deterministic fallback. Database workflows remain an explicit optional subpath, so the Community root stays focused on providers and contributor-owned generic use cases.
 
 ```ts
-import { createCommunityDatabaseMcpAgent } from "@langgraph-toolkit/community";
+import { createDatabaseAgent } from "@langgraph-toolkit/community/database";
 
-const agent = await createCommunityDatabaseMcpAgent({
+const agent = await createDatabaseAgent({
   mcp: databaseGateway,
 });
 
@@ -51,7 +51,7 @@ core
         └── contributor-owned use cases
 ```
 
-Community depends on Core and MCP. It does not own MCP transport, HTTP routes, framework lifecycle, or persistence.
+Community depends on Core and MCP. It does not own MCP transport, generic graph execution, HTTP routes, framework lifecycle, or persistence. Database, retrieval, or provider presets are convenience compositions and must remain replaceable by application-owned graphs.
 
 ## Development
 

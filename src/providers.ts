@@ -2,18 +2,18 @@ import {
   HuggingFaceProvider,
   OpenAiCompatibleProvider,
   ToolkitModelRegistry,
-} from "@langgraph-toolkit/core";
+} from "./provider-drivers.js";
 import type {
   LLMProvider,
-  LLMProviderConfig,
 } from "@langgraph-toolkit/core";
+import type { LLMProviderConfig } from "@langgraph-toolkit/core";
 
 /** A minimal environment reader that is safe to inject in tests and workers. */
 export interface EnvReader {
   readonly get: (name: string) => string | undefined;
 }
 
-/** Environment lookup input accepted by providerConfigFromEnv(). */
+/** Environment lookup input accepted by configFromEnv(). */
 export type ProviderEnvironment = Readonly<Record<string, string | undefined>>;
 
 /** A provider profile that resolves to the built-in Hugging Face driver. */
@@ -119,7 +119,7 @@ function defaultProfile(environment: ProviderEnvironment | EnvReader | undefined
 }
 
 /** Convert a community profile into the exact core provider config. */
-export function providerConfigFromEnv(
+export function configFromEnv(
   profile: CommunityModelProfile,
   environment?: ProviderEnvironment | EnvReader,
 ): LLMProviderConfig {
@@ -127,7 +127,7 @@ export function providerConfigFromEnv(
 }
 
 /** Construct the built-in Hugging Face provider without importing an HF SDK. */
-export function createHuggingFaceProvider(
+export function createHuggingFace(
   profile: HuggingFaceProfile,
   environment?: ProviderEnvironment | EnvReader,
 ): LLMProvider {
@@ -135,7 +135,7 @@ export function createHuggingFaceProvider(
 }
 
 /** Construct a provider for Ollama, vLLM, TGI, LiteLLM, or another compatible endpoint. */
-export function createOpenAICompatibleProvider(
+export function createOpenAICompatible(
   profile: OpenAICompatibleProfile,
   environment?: ProviderEnvironment | EnvReader,
 ): LLMProvider {
@@ -143,7 +143,7 @@ export function createOpenAICompatibleProvider(
 }
 
 /** Create a core registry from community profiles while preserving tier aliases. */
-export function createCommunityModelRegistry(options: CommunityRegistryOptions): ToolkitModelRegistry {
+export function createModelRegistry(options: CommunityRegistryOptions): ToolkitModelRegistry {
   const environment = options.environment ?? defaultEnvironment();
   const inferred = defaultProfile(environment, options.fallback);
   const configured: Readonly<Record<string, CommunityModelProfile | LLMProviderConfig>> = {

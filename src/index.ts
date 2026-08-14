@@ -5,10 +5,10 @@
  * It does not import a web framework or force a vendor SDK into applications.
  */
 export {
-  createCommunityModelRegistry,
-  createHuggingFaceProvider,
-  createOpenAICompatibleProvider,
-  providerConfigFromEnv,
+  createModelRegistry,
+  createHuggingFace,
+  createOpenAICompatible,
+  configFromEnv,
 } from "./providers.js";
 
 export type {
@@ -20,5 +20,29 @@ export type {
   ProviderEnvironment,
 } from "./providers.js";
 
-export { createCommunityDatabaseMcpAgent } from "./database-agent.js";
-export type { CommunityDatabaseMcpAgentOptions } from "./database-agent.js";
+/** Zero-config model, memory, persistence, and cross-cutting defaults. */
+export {
+  autoModel,
+  createModelPool,
+  autoMemory,
+  autoCheckpoint,
+  autoGuardrails,
+  autoReliability,
+  autoObservability,
+  autoEvaluation,
+  autoRag,
+  autoCache,
+} from "./zero-config.js";
+
+export type {
+  AutoModelOptions,
+  ModelPool,
+  AutoMemory,
+  GuardrailResult,
+  Guardrails,
+  Reliability,
+  Observability,
+  EvaluationResult,
+  Rag,
+  Cache,
+} from "./zero-config.js";

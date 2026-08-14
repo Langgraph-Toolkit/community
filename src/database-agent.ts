@@ -1,13 +1,10 @@
-import {
-  createDatabaseMcpAgent,
-  type DatabaseMcpAgent,
-  type DatabaseMcpAgentOptions,
-} from "@langgraph-toolkit/mcp";
-import { createCommunityModelRegistry } from "./providers.js";
+import { createDatabaseAgent as buildDatabaseAgent } from "./database/agent.js";
+import type { DatabaseMcpAgent, DatabaseMcpAgentOptions } from "./database/agent.js";
+import { createModelRegistry } from "./providers.js";
 import type { CommunityRegistryOptions } from "./providers.js";
 
 /** Options for the community database MCP use case. Provider details are inferred from the environment. */
-export interface CommunityDatabaseMcpAgentOptions extends Omit<DatabaseMcpAgentOptions, "modelRegistry"> {
+export interface CommunityDatabaseAgentOptions extends Omit<DatabaseMcpAgentOptions, "modelRegistry"> {
   readonly model?: Omit<CommunityRegistryOptions, "fallback">;
 }
 
@@ -28,13 +25,13 @@ const fallbackIntent = JSON.stringify({
  * Compose the database MCP use case with community provider inference.
  * DeepSeek is preferred when configured, then Hugging Face, then a deterministic mock.
  */
-export async function createCommunityDatabaseMcpAgent(
-  options: CommunityDatabaseMcpAgentOptions = {},
+export async function createDatabaseAgent(
+  options: CommunityDatabaseAgentOptions = {},
 ): Promise<DatabaseMcpAgent> {
-  const modelRegistry = createCommunityModelRegistry({
+  const modelRegistry = createModelRegistry({
     ...options.model,
     fallback: { driver: "mock", model: "community-database-agent", mockResponse: fallbackIntent },
   });
   const { model: _model, ...agentOptions } = options;
-  return createDatabaseMcpAgent({ ...agentOptions, modelRegistry });
+  return buildDatabaseAgent({ ...agentOptions, modelRegistry });
 }
