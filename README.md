@@ -1,46 +1,45 @@
 # @langgraph-toolkit/community
 
-Optional provider presets for **Langgraph-Toolkit**. The package keeps the core graph contracts framework-neutral and adds small typed helpers for open-source model deployments.
+Community-maintained providers and use-case composition for Langgraph-Toolkit. The package adds provider inference to the framework-agnostic MCP database agent without changing the core runtime.
 
-## Supported deployment shapes
+## Install
 
-The initial package supports Hugging Face Inference Providers and any OpenAI-compatible endpoint, including common local or self-hosted deployments such as Ollama, vLLM, TGI, and LiteLLM. A LoRA or fine-tuned model is configured by changing the model identifier or compatible endpoint. Graph nodes and state contracts do not change.
-
-```ts
-import {
-  createCommunityModelRegistry,
-  type CommunityModelProfile,
-} from "@langgraph-toolkit/community";
-
-const profiles: Record<string, CommunityModelProfile> = {
-  cheap: {
-    driver: "huggingface",
-    model: "Qwen/Qwen3-8B",
-    tokenEnv: "HF_TOKEN",
-    provider: "auto",
-    maxTokens: 512,
-  },
-  local: {
-    driver: "openai-compatible",
-    model: "my-lora-adapter",
-    baseUrlEnv: "LOCAL_LLM_BASE_URL",
-    tokenEnv: "LOCAL_LLM_API_KEY",
-    maxTokens: 1024,
-  },
-};
-
-const registry = createCommunityModelRegistry({
-  tiers: profiles,
-  environment: process.env,
-});
-
-const provider = registry.tier("cheap");
-const result = await provider.chat([{ role: "user", content: "Summarize the result." }]);
-console.log(result.content);
+```bash
+npm install @langgraph-toolkit/community @langgraph-toolkit/mcp
 ```
 
-No provider SDK is required by this package. Credentials are read from an injected environment object or an `EnvReader`, which makes configuration easy to test and compatible with a database-backed or secret-manager-backed loader.
+## Database agent with provider inference
 
-## Scope boundary
+The wrapper checks explicit provider options first, then environment variables, and finally the configured fallback. This keeps an example resource small while allowing DeepSeek, Hugging Face, or an application-owned OpenAI-compatible endpoint.
 
-This package does not put training orchestration, vendor credentials, or framework adapters into core. Training and fine-tuning pipelines can publish a model endpoint or model identifier, then reuse the same provider profile. Image generation providers such as fal.ai should be added as a separate typed capability rather than pretending that an image API is an `LLMProvider`.
+```ts
+import { createCommunityDatabaseMcpAgent } from "@langgraph-toolkit/community";
+
+const agent = await createCommunityDatabaseMcpAgent({
+  mcp: databaseGateway,
+});
+
+const answer = await agent.run({
+  question: "How many users are there?",
+});
+```
+
+Typical environment variables are `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HF_API_KEY`, and `HF_MODEL`. Keep provider secrets in the process environment or a secret manager. They must not be placed in graph input.
+
+## Boundary
+
+Community depends on MCP and core. It does not own MCP transport, HTTP routes, framework lifecycle, or checkpoint drivers. Use the MCP package directly when provider inference is not needed.
+
+## Development
+
+```bash
+npm install
+npm run build
+npm test
+```
+
+New providers should expose a typed resolver, document environment variables, add deterministic mock coverage, and preserve the MCP agent contract.
+
+## License
+
+MIT
