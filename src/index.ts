@@ -19,6 +19,7 @@ export type {
   OpenAICompatibleProfile,
   ProviderEnvironment,
 } from "./providers.js";
+export type { ToolkitModelRegistry } from "./provider-drivers.js";
 
 /** Community-owned model pool and RAG defaults. Core owns the generic auto facades. */
 export {

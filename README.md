@@ -1,63 +1,82 @@
 # @langgraph-toolkit/community
 
-**Optional intelligence without provider lock-in.** Community is the extension surface for provider drivers, model tiers, routing policies, generic RAG, and contributor-owned use cases. It does not change the framework-neutral Core, MCP, or persistence contracts.
+**Optional, explicit integrations for Langgraph-Toolkit.** Community supplies provider drivers, caller-owned model tiers and generic RAG. It does not select a vendor, model, credential, fallback, database schema or application workflow for you.
 
-## Install only when you need a provider or built-in composition
+## Install only when you need an optional integration
 
 ```bash
 npm install @langgraph-toolkit/core @langgraph-toolkit/community
 ```
 
-Core remains independently usable. Add Community when the application wants environment-inferred models, tier selection, fallback, load balancing, ensemble responses, or the generic RAG facade.
+Use Core alone for state, graphs, tools and execution. Add Community only when an application explicitly needs an open-source or OpenAI-compatible provider, a model pool or generic RAG.
 
-## Zero-config model selection
+## Declare model configuration in the application
 
-`autoModel()` reads explicit options first, then the supported environment variables, and finally uses the deterministic local fallback used by tests. Provider secrets remain outside graph input.
+The application owns provider selection. Put credentials in the host application's environment and declare the driver, model and endpoint in its config module. Community validates the declaration during bootstrap and fails before a request is handled when a required value is absent.
 
 ```ts
-import { autoModel } from "@langgraph-toolkit/community";
+import { createModelRegistry } from "@langgraph-toolkit/community";
 
-const model = autoModel();
-const result = await model.chat([
-  { role: "user", content: "Extract the priority from this ticket." },
-]);
+export const models = createModelRegistry({
+  tiers: {
+    chat: {
+      driver: "openai-compatible",
+      model: process.env.MODEL_NAME!,
+      tokenEnv: "MODEL_API_KEY",
+      baseUrlEnv: "MODEL_BASE_URL",
+      temperature: 0.1,
+    },
+  },
+});
 ```
 
-Typical environment variables include `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HF_API_KEY`, and `HF_MODEL`. A hosted endpoint, a Hugging Face model, a local inference server, or a fine-tuned model can implement the same Core `LLMProvider` contract.
+The snippet does **not** name a default vendor or model. An application can configure DeepSeek, Ollama, vLLM, TGI, LiteLLM or another compatible endpoint by setting its own `MODEL_*` variables. Missing `MODEL_NAME`, `MODEL_API_KEY` or `MODEL_BASE_URL` throws during composition rather than silently selecting a fallback.
+
+## Use an explicit provider without a registry
+
+```ts
+import { createOpenAICompatible } from "@langgraph-toolkit/community";
+
+const model = createOpenAICompatible({
+  driver: "openai-compatible",
+  model: process.env.MODEL_NAME!,
+  tokenEnv: "MODEL_API_KEY",
+  baseUrlEnv: "MODEL_BASE_URL",
+});
+```
+
+For Hugging Face, use `createHuggingFace()` with `driver: "huggingface"`, an explicit `model` and `tokenEnv`. Both factories accept an optional environment reader so workers and tests can inject configuration without mutating process globals.
 
 ## ModelPool policies
 
-`createModelPool()` keeps tier aliases in one registry and returns providers for common policies. The policy is selected while composing the resource, not repeated in every request.
+`createModelPool()` accepts caller-owned tiers and exposes typed policy helpers. Selection remains in the application resource, where a developer can inspect or replace it.
 
 ```ts
 import { createModelPool } from "@langgraph-toolkit/community";
 
 const pool = createModelPool({
   tiers: {
-    cheap: { driver: "mock", model: "fast" },
-    strong: { driver: "mock", model: "accurate" },
+    fast: modelConfigFast,
+    careful: modelConfigCareful,
   },
 });
 
-const routed = pool.routing((tiers, input) =>
-  input.messages.length > 4 ? tiers.includes("strong") ? "strong" : tiers[0] : "cheap",
+const selected = pool.routing((tiers, input) =>
+  input.messages.length > 4 && tiers.includes("careful") ? "careful" : "fast",
 );
-const resilient = pool.fallback(["strong", "cheap"]);
-const balanced = pool.loadBalance(["cheap", "strong"]);
-const ensemble = pool.ensemble(["cheap", "strong"]);
 ```
 
-The four policies have distinct intent: `routing()` delegates tier selection to a typed application policy, `fallback()` retries the next tier after provider failure, `loadBalance()` rotates through configured tiers, and `ensemble()` asks all tiers and returns either the supplied judge result or the longest response.
+`routing()` delegates a tier decision to application code. `fallback()`, `loadBalance()` and `ensemble()` operate only on the explicitly named tiers. None creates a provider or model implicitly.
 
 ## Generic RAG
 
-RAG is provider-neutral and does not assume SQL, a vector vendor, a database schema, or a chat-only application. Inject any retriever that returns documents with a stable `content` field. The same facade can answer directly or become a Core subgraph.
+RAG is provider-neutral. Supply both the model and retriever. Community does not assume SQL, a vector vendor, a database row type or a chat-only workflow.
 
 ```ts
-import { autoModel, createRAG } from "@langgraph-toolkit/community";
+import { createRAG } from "@langgraph-toolkit/community";
 
 const rag = createRAG({
-  model: autoModel(),
+  model,
   retriever: {
     async retrieve(query, options = {}) {
       return searchDocuments(query, options.topK ?? 5);
@@ -65,27 +84,17 @@ const rag = createRAG({
   },
   name: "knowledge-answer",
 });
-
-const answer = await rag.answer("What is the refund policy?");
-console.log(answer.answer, answer.documents);
-
-const retrievalGraph = rag.asSubgraph();
 ```
-
-The default model and empty retriever are deterministic development fallbacks. Production applications should inject a model and retriever that match their latency, privacy, and grounding requirements.
-
-## Optional database convenience
-
-Database-specific helpers belong only to `@langgraph-toolkit/community/database`; they are not part of the Community root and are not required for generic workflows. The root remains suitable for classification, extraction, background tasks, retrieval, multi-agent routing, and any other typed workflow.
 
 ## Package boundary
 
 | Boundary | Owns | Does not own |
-|---|---|---|
-| Core | State, graph topology, execution, events and interrupts | Providers, HTTP frameworks or database SDKs |
-| MCP | Server declarations, discovery, tools, resources and lifecycle | Domain-specific agents or framework registration |
-| Community | Providers, model policies, RAG and optional compositions | Core execution, transport or persistence drivers |
-| Adapters | Host lifecycle, routes and serialization | Prompt policy or database schema |
+| --- | --- | --- |
+| Core | State, graph topology, execution, events, interrupts and generic tool contracts | Providers, transports, database schema or product workflow |
+| MCP | Server declarations, discovery, typed tools, resources and connection lifecycle | Domain-specific agents, database rows or framework routes |
+| Community | Provider drivers, model policies and generic RAG | Default model selection, application workflows, Core execution or HTTP transport |
+| Application example | Prompting, state, node, edge, routing, MCP tool policy and business response | Hidden package convention that prevents customization |
+| Adapters | Host lifecycle, HTTP routes and serialization | Prompt policy, model selection, MCP server selection or domain schema |
 
 ## Development
 
@@ -95,7 +104,7 @@ npm run build
 npm test
 ```
 
-Contributors should add typed contracts, TSDoc, deterministic tests, and an independent example for each public policy or provider extension.
+Contributors should add typed contracts, TSDoc and deterministic tests for each public provider, model policy or generic RAG capability. Do not add a domain workflow, default provider, model fallback or credential guessing to this package.
 
 ## License
 

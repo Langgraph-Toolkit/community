@@ -1,4 +1,4 @@
-import {
+import type {
   ChatMessage,
   ChatResult,
   ChatStreamOptions,
@@ -12,23 +12,23 @@ import {
   type ProviderEnvironment,
 } from "./providers.js";
 
-/** A small model pool facade that preserves tier aliases for graph bindings. */
+/** A model pool facade over caller-owned, named tiers. */
 export interface ModelPool {
   readonly registry: ReturnType<typeof createModelRegistry>;
-  get(tier?: string): LLMProvider;
+  get(tier: string): LLMProvider;
   routing(policy: (tiers: readonly string[], input: JsonObject) => string): LLMProvider;
   fallback(tiers: readonly string[]): LLMProvider;
   loadBalance(tiers: readonly string[]): LLMProvider;
   ensemble(tiers: readonly string[], judge?: (responses: readonly ChatResult[]) => ChatResult | Promise<ChatResult>): LLMProvider;
 }
 
-/** Construct a tier-aware model pool with inferred cheap and strong defaults. */
-export function createModelPool(options: CommunityRegistryOptions = {}): ModelPool {
+/** Construct a tier-aware model pool from explicit application model configuration. */
+export function createModelPool(options: CommunityRegistryOptions): ModelPool {
   const registry = createModelRegistry(options);
   const provider = (tier: string): LLMProvider => registry.tier(tier);
   return {
     registry,
-    get: (tier = "strong") => provider(tier),
+    get: provider,
     routing: (policy) => {
       const select = (messages: readonly ChatMessage[]): LLMProvider => {
         const input: JsonObject = {
@@ -95,12 +95,12 @@ function wrapProvider(
   };
 }
 
-/** Minimal retriever contract for adding a real vector or keyword backend later. */
+/** Minimal retriever contract for composing a real vector or keyword backend. */
 export interface Rag {
   retrieve(query: string): Promise<readonly JsonObject[]>;
 }
 
-/** Create an empty typed RAG boundary; retrieval backends can be composed explicitly. */
+/** Create an empty typed RAG boundary; retrieval backends are composed explicitly. */
 export function autoRag(): Rag {
   return { retrieve: async () => [] };
 }

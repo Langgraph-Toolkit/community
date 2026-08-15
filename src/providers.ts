@@ -3,10 +3,7 @@ import {
   OpenAiCompatibleProvider,
   ToolkitModelRegistry,
 } from "./provider-drivers.js";
-import type {
-  LLMProvider,
-} from "@langgraph-toolkit/core";
-import type { LLMProviderConfig } from "@langgraph-toolkit/core";
+import type { LLMProvider, LLMProviderConfig } from "@langgraph-toolkit/core";
 
 /** A minimal environment reader that is safe to inject in tests and workers. */
 export interface EnvReader {
@@ -16,22 +13,22 @@ export interface EnvReader {
 /** Environment lookup input accepted by configFromEnv(). */
 export type ProviderEnvironment = Readonly<Record<string, string | undefined>>;
 
-/** A provider profile that resolves to the built-in Hugging Face driver. */
+/** An explicitly configured Hugging Face provider profile. */
 export interface HuggingFaceProfile {
   readonly driver: "huggingface";
   readonly model: string;
-  readonly tokenEnv?: string;
+  readonly tokenEnv: string;
   readonly provider?: string;
   readonly maxTokens?: number;
   readonly temperature?: number;
 }
 
-/** A provider profile for Ollama, vLLM, TGI, LiteLLM, or another compatible endpoint. */
+/** An explicitly configured OpenAI-compatible provider profile. */
 export interface OpenAICompatibleProfile {
   readonly driver: "openai-compatible";
   readonly model: string;
   readonly baseUrlEnv?: string;
-  readonly tokenEnv?: string;
+  readonly tokenEnv: string;
   readonly baseURL?: string;
   readonly maxTokens?: number;
   readonly temperature?: number;
@@ -41,84 +38,100 @@ export interface OpenAICompatibleProfile {
 /** Union of provider profiles supported without installing a vendor SDK. */
 export type CommunityModelProfile = HuggingFaceProfile | OpenAICompatibleProfile;
 
-/** Tier configuration plus the optional usage meter accepted by core. */
+/** Explicitly resolve one provider profile from required environment variables. */
+export interface EnvironmentModelProfile {
+  readonly fromEnvironment: true;
+  readonly driverEnv?: string;
+  readonly modelEnv?: string;
+  readonly tokenEnv?: string;
+  readonly baseUrlEnv?: string;
+  readonly temperature?: number;
+  readonly reasoningEffort?: LLMProviderConfig["reasoningEffort"];
+}
+
+type RegistryProfile = CommunityModelProfile | EnvironmentModelProfile | LLMProviderConfig;
+
+/** A caller-owned model tier map and the optional usage meter accepted by Core. */
 export interface CommunityRegistryOptions {
-  readonly tiers?: Readonly<Record<string, CommunityModelProfile | LLMProviderConfig>>;
+  readonly tiers: Readonly<Record<string, RegistryProfile>>;
   readonly meter?: (tier: string, usage: { input: number; output: number }) => void;
   readonly environment?: ProviderEnvironment | EnvReader;
-  readonly fallback?: LLMProviderConfig;
 }
 
 function readEnvironment(environment: ProviderEnvironment | EnvReader | undefined, name: string): string | undefined {
-  if (!environment) return undefined;
-  if ("get" in environment) {
-    const reader = environment as EnvReader;
-    return reader.get(name);
-  }
+  if (!environment) return process.env[name];
+  if ("get" in environment) return (environment as EnvReader).get(name);
   return environment[name];
 }
 
-function defaultEnvironment(): EnvReader {
-  return { get: (name) => process.env[name] };
+function isEnvironmentProfile(profile: RegistryProfile): profile is EnvironmentModelProfile {
+  return "fromEnvironment" in profile && profile.fromEnvironment === true;
 }
 
-function isCommunityProfile(
-  profile: CommunityModelProfile | LLMProviderConfig,
-): profile is CommunityModelProfile {
-  return profile.driver === "huggingface" || profile.driver === "openai-compatible";
+function isCommunityProfile(profile: RegistryProfile): profile is CommunityModelProfile {
+  return "driver" in profile && (profile.driver === "huggingface" || profile.driver === "openai-compatible");
+}
+
+function requireText(value: string | undefined, label: string): string {
+  if (!value || value.trim().length === 0) {
+    throw new Error(`Community model configuration requires ${label}.`);
+  }
+  return value;
 }
 
 function resolveConfig(profile: CommunityModelProfile, environment?: ProviderEnvironment | EnvReader): LLMProviderConfig {
+  requireText(profile.model, "a model name");
+  const apiKey = readEnvironment(environment, profile.tokenEnv);
+  requireText(apiKey, `environment variable ${profile.tokenEnv}`);
+
   if (profile.driver === "huggingface") {
     return {
       driver: "huggingface",
       model: profile.model,
-      apiKey: readEnvironment(environment, profile.tokenEnv ?? "HF_TOKEN"),
+      apiKey,
       provider: profile.provider ?? "auto",
       maxTokens: profile.maxTokens,
       temperature: profile.temperature,
     };
   }
 
+  const baseURL = profile.baseURL ?? (profile.baseUrlEnv ? readEnvironment(environment, profile.baseUrlEnv) : undefined);
+  requireText(baseURL, "an OpenAI-compatible base URL or baseUrlEnv");
   return {
     driver: "openai-compatible",
     model: profile.model,
-    baseURL: profile.baseURL ?? readEnvironment(environment, profile.baseUrlEnv ?? "OPENAI_BASE_URL"),
-    apiKey: readEnvironment(environment, profile.tokenEnv ?? "OPENAI_API_KEY"),
+    baseURL,
+    apiKey,
     maxTokens: profile.maxTokens,
     temperature: profile.temperature,
     reasoningEffort: profile.reasoningEffort,
   };
 }
 
-function defaultProfile(environment: ProviderEnvironment | EnvReader | undefined, fallback: LLMProviderConfig | undefined): CommunityModelProfile | LLMProviderConfig {
-  const deepseekKey = readEnvironment(environment, "DEEPSEEK_API_KEY");
-  if (deepseekKey) {
-    return {
-      driver: "openai-compatible",
-      model: readEnvironment(environment, "DEEPSEEK_MODEL") ?? "deepseek-v4-flash",
-      baseURL: readEnvironment(environment, "DEEPSEEK_BASE_URL") ?? "https://api.deepseek.com/v1",
-      tokenEnv: "DEEPSEEK_API_KEY",
-      maxTokens: Number(readEnvironment(environment, "DEEPSEEK_MAX_TOKENS") ?? 512),
-      temperature: Number(readEnvironment(environment, "DEEPSEEK_TEMPERATURE") ?? 0.1),
-      reasoningEffort: readEnvironment(environment, "DEEPSEEK_REASONING_EFFORT") as LLMProviderConfig["reasoningEffort"],
-    };
+function resolveEnvironmentProfile(profile: EnvironmentModelProfile, environment?: ProviderEnvironment | EnvReader): LLMProviderConfig {
+  const driverEnv = profile.driverEnv ?? "MODEL_DRIVER";
+  const modelEnv = profile.modelEnv ?? "MODEL_NAME";
+  const tokenEnv = profile.tokenEnv ?? "MODEL_API_KEY";
+  const driver = requireText(readEnvironment(environment, driverEnv), driverEnv);
+  const model = requireText(readEnvironment(environment, modelEnv), modelEnv);
+
+  if (driver === "huggingface") {
+    return resolveConfig({ driver, model, tokenEnv, temperature: profile.temperature }, environment);
   }
-  const huggingFaceToken = readEnvironment(environment, "HF_TOKEN");
-  if (huggingFaceToken) {
-    return {
-      driver: "huggingface",
-      model: readEnvironment(environment, "HF_MODEL") ?? "Qwen/Qwen2.5-7B-Instruct",
-      tokenEnv: "HF_TOKEN",
-      provider: readEnvironment(environment, "HF_PROVIDER") ?? "auto",
-      maxTokens: Number(readEnvironment(environment, "HF_MAX_TOKENS") ?? 512),
-      temperature: Number(readEnvironment(environment, "HF_TEMPERATURE") ?? 0.1),
-    };
+  if (driver === "openai-compatible") {
+    return resolveConfig({
+      driver,
+      model,
+      tokenEnv,
+      baseUrlEnv: profile.baseUrlEnv ?? "MODEL_BASE_URL",
+      temperature: profile.temperature,
+      reasoningEffort: profile.reasoningEffort,
+    }, environment);
   }
-  return fallback ?? { driver: "mock", model: "community-local" };
+  throw new Error('MODEL_DRIVER must be "huggingface" or "openai-compatible".');
 }
 
-/** Convert a community profile into the exact core provider config. */
+/** Convert an explicitly declared community profile into the exact Core provider config. */
 export function configFromEnv(
   profile: CommunityModelProfile,
   environment?: ProviderEnvironment | EnvReader,
@@ -126,7 +139,7 @@ export function configFromEnv(
   return resolveConfig(profile, environment);
 }
 
-/** Construct the built-in Hugging Face provider without importing an HF SDK. */
+/** Construct the built-in Hugging Face provider from an explicit profile. */
 export function createHuggingFace(
   profile: HuggingFaceProfile,
   environment?: ProviderEnvironment | EnvReader,
@@ -142,20 +155,26 @@ export function createOpenAICompatible(
   return new OpenAiCompatibleProvider(resolveConfig(profile, environment));
 }
 
-/** Create a core registry from community profiles while preserving tier aliases. */
+/**
+ * Create a Core registry from caller-owned model profiles.
+ *
+ * Community never guesses a provider, model, endpoint, token, or fallback. Supply each
+ * tier deliberately in application configuration; an empty registry fails during bootstrap.
+ */
 export function createModelRegistry(options: CommunityRegistryOptions): ToolkitModelRegistry {
-  const environment = options.environment ?? defaultEnvironment();
-  const inferred = defaultProfile(environment, options.fallback);
-  const configured: Readonly<Record<string, CommunityModelProfile | LLMProviderConfig>> = {
-    cheap: inferred,
-    strong: inferred,
-    ...(options.tiers ?? {}),
-  };
+  const entries = Object.entries(options.tiers);
+  if (entries.length === 0) {
+    throw new Error("Community model configuration requires at least one named tier.");
+  }
+
   const tiers: Record<string, LLMProviderConfig> = {};
-  for (const [alias, profile] of Object.entries(configured)) {
-    tiers[alias] = isCommunityProfile(profile)
-      ? resolveConfig(profile, environment)
-      : profile;
+  for (const [alias, profile] of entries) {
+    requireText(alias, "a non-empty tier name");
+    tiers[alias] = isEnvironmentProfile(profile)
+      ? resolveEnvironmentProfile(profile, options.environment)
+      : isCommunityProfile(profile)
+        ? resolveConfig(profile, options.environment)
+        : profile;
   }
   return new ToolkitModelRegistry({ tiers, meter: options.meter });
 }

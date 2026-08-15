@@ -11,6 +11,7 @@
  *   with provider routing (auto/fastest/cheapest)
  * - mock: deterministic test double
  */
+import { createModel } from "@langgraph-toolkit/core";
 import type {
 	Actor,
 	ChatMessage,
@@ -25,7 +26,8 @@ import type {
 	ModelToolChoice,
 	ModelToolSpec,
 	ModelRegistry,
-	ResponseFormat,
+  ResponseFormat,
+  Model,
 } from "@langgraph-toolkit/core";
 
 /** Community policy contract used by rolePolicy() and combinePolicies(). */
@@ -182,6 +184,11 @@ export class ToolkitModelRegistry implements ModelRegistry {
       throw new Error(`Unregistered model tier "${alias}". Declare it in the registry (Rule T3).`);
     }
     return provider;
+  }
+
+  /** Return the Core model facade for an already explicit, configured tier. */
+  model(alias: string): Model {
+    return createModel({ name: alias, provider: this.tier(alias) });
   }
 
   /** Return configured tier aliases in deterministic insertion order. */

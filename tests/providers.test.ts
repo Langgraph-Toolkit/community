@@ -8,7 +8,6 @@ import {
 import {
   HuggingFaceProvider,
   OpenAiCompatibleProvider,
-  ToolkitModelRegistry,
 } from "../src/provider-drivers.js";
 
 describe("community provider presets", () => {
@@ -30,8 +29,8 @@ describe("community provider presets", () => {
 
   it("constructs a provider without starting a network request", () => {
     const provider = createHuggingFace(
-      { driver: "huggingface", model: "Qwen/Qwen3-8B" },
-      {},
+      { driver: "huggingface", model: "Qwen/Qwen3-8B", tokenEnv: "HF_TOKEN" },
+      { HF_TOKEN: "test-token" },
     );
 
     expect(provider.name).toBe("huggingface:Qwen/Qwen3-8B");
@@ -40,33 +39,31 @@ describe("community provider presets", () => {
   it("keeps tier aliases stable while profiles change", () => {
     const registry = createModelRegistry({
       tiers: {
-        cheap: { driver: "huggingface", model: "Qwen/Qwen3-8B" },
+        cheap: { driver: "huggingface", model: "Qwen/Qwen3-8B", tokenEnv: "HF_TOKEN" },
         local: {
           driver: "openai-compatible",
           model: "my-lora-adapter",
           baseURL: "http://localhost:11434/v1",
+          tokenEnv: "LOCAL_TOKEN",
         },
       },
-      environment: {},
+      environment: { HF_TOKEN: "test-token", LOCAL_TOKEN: "local-token" },
     });
 
     expect(registry.tier("cheap").name).toBe("huggingface:Qwen/Qwen3-8B");
     expect(registry.tier("local").name).toBe("openai-compatible:my-lora-adapter");
   });
 
-  it("keeps the registry and provider capabilities in Community", async () => {
-    const registry = new ToolkitModelRegistry({
-      tiers: {
-        strong: { driver: "mock", model: "m-strong" },
-        cheap: { driver: "mock", model: "m-cheap" },
-      },
-    });
-    const result = await registry.tier("strong").chat([{ role: "user", content: "hi" }]);
-    expect(result.content).toContain("m-strong");
-    registry.recordUsage("strong", { input: 10, output: 5 });
-    expect(registry.tokenUsage.get("strong")).toEqual({ input: 10, output: 5 });
-    registry.reconfigure({ strong: { driver: "mock", model: "m-next" } });
-    expect(registry.tier("strong").name).toBe("mock:m-next");
+  it("fails fast when application-owned provider configuration is incomplete", () => {
+    expect(() => createModelRegistry({ tiers: {} })).toThrow(/at least one named tier/i);
+    expect(() => configFromEnv(
+      { driver: "huggingface", model: "Qwen/Qwen3-8B", tokenEnv: "HF_TOKEN" },
+      {},
+    )).toThrow(/HF_TOKEN/i);
+    expect(() => configFromEnv(
+      { driver: "openai-compatible", model: "local", tokenEnv: "LOCAL_TOKEN" },
+      { LOCAL_TOKEN: "local-token" },
+    )).toThrow(/base URL/i);
   });
 
   it("constructs the optional provider drivers without network access", () => {
