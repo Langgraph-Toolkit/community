@@ -20,29 +20,31 @@ export type {
   ProviderEnvironment,
 } from "./providers.js";
 
-/** Zero-config model, memory, persistence, and cross-cutting defaults. */
+/** Community-owned model pool and RAG defaults. Core owns the generic auto facades. */
 export {
-  autoModel,
   createModelPool,
-  autoMemory,
-  autoCheckpoint,
-  autoGuardrails,
-  autoReliability,
-  autoObservability,
-  autoEvaluation,
   autoRag,
-  autoCache,
 } from "./zero-config.js";
 
 export type {
-  AutoModelOptions,
   ModelPool,
-  AutoMemory,
-  GuardrailResult,
-  Guardrails,
-  Reliability,
-  Observability,
-  EvaluationResult,
   Rag,
-  Cache,
 } from "./zero-config.js";
+
+/** Convenience re-exports for applications that install Community alongside Core. */
+export { autoModel, autoMemory, autoCache, autoGuardrails, autoReliability, autoObservability, autoEvaluation } from "@langgraph-toolkit/core";
+export type { AutoModelOptions } from "@langgraph-toolkit/core";
+
+/** Generic retrieval-augmented generation facade. */
+export { createRAG } from "./rag.js";
+
+export type {
+  RAG,
+  RAGAnswer,
+  RAGAnswerOptions,
+  RAGDocument,
+  RAGOptions,
+  RAGRetrieveOptions,
+  RAGRetriever,
+  RAGState,
+} from "./rag.js";

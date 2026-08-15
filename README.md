@@ -1,57 +1,91 @@
 # @langgraph-toolkit/community
 
-**Optional intelligence, no mandatory provider lock-in.** Community is the extension surface for model providers, built-in functions, use-case presets, and contributor-owned integrations. It adds provider inference without changing the framework-agnostic Core or MCP contracts.
+**Optional intelligence without provider lock-in.** Community is the extension surface for provider drivers, model tiers, routing policies, generic RAG, and contributor-owned use cases. It does not change the framework-neutral Core, MCP, or persistence contracts.
 
-## Install when a provider is needed
+## Install only when you need a provider or built-in composition
 
 ```bash
-npm install @langgraph-toolkit/core @langgraph-toolkit/mcp @langgraph-toolkit/community
+npm install @langgraph-toolkit/core @langgraph-toolkit/community
 ```
 
-Core and MCP remain useful without this package. Add Community when the application wants provider selection, model tiers, fallback behavior, or a maintained use-case preset.
+Core remains independently usable. Add Community when the application wants environment-inferred models, tier selection, fallback, load balancing, ensemble responses, or the generic RAG facade.
 
-## Provider inference keeps resources short
+## Zero-config model selection
 
-The community provider layer checks explicit provider options first, then environment variables, and finally a deterministic fallback. Database workflows remain an explicit optional subpath, so the Community root stays focused on providers and contributor-owned generic use cases.
+`autoModel()` reads explicit options first, then the supported environment variables, and finally uses the deterministic local fallback used by tests. Provider secrets remain outside graph input.
 
 ```ts
-import { createDatabaseAgent } from "@langgraph-toolkit/community/database";
+import { autoModel } from "@langgraph-toolkit/community";
 
-const agent = await createDatabaseAgent({
-  mcp: databaseGateway,
-});
-
-const answer = await agent.run({
-  question: "How many users are there?",
-});
+const model = autoModel();
+const result = await model.chat([
+  { role: "user", content: "Extract the priority from this ticket." },
+]);
 ```
 
-Typical environment variables include `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HF_API_KEY`, and `HF_MODEL`. Provider secrets stay in the environment or a secret manager. They are never placed in graph input.
+Typical environment variables include `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `HF_API_KEY`, and `HF_MODEL`. A hosted endpoint, a Hugging Face model, a local inference server, or a fine-tuned model can implement the same Core `LLMProvider` contract.
 
-## Swap providers without rewriting graph code
+## ModelPool policies
 
-| Requirement | Community surface | Graph change |
-|---|---|---|
-| Hosted DeepSeek or another OpenAI-compatible endpoint | Environment inference or explicit resolver | None |
-| Hugging Face inference | `HF_API_KEY`, `HF_MODEL`, or an application registry | None |
-| Free and Pro model tiers | Tier aliases and model registry | Bind a tier to a node only when needed |
-| Local deterministic tests | Mock fallback provider | None |
-| LoRA or fine-tuned model | Application-owned endpoint or registry entry | None if the endpoint keeps the contract |
+`createModelPool()` keeps tier aliases in one registry and returns providers for common policies. The policy is selected while composing the resource, not repeated in every request.
 
-The package does not force a vendor, transport, HTTP framework, or checkpoint driver. Contributors can add a provider by implementing a typed resolver, documenting environment variables, adding deterministic mock coverage, and preserving the agent contract.
+```ts
+import { createModelPool } from "@langgraph-toolkit/community";
+
+const pool = createModelPool({
+  tiers: {
+    cheap: { driver: "mock", model: "fast" },
+    strong: { driver: "mock", model: "accurate" },
+  },
+});
+
+const routed = pool.routing((tiers, input) =>
+  input.messages.length > 4 ? tiers.includes("strong") ? "strong" : tiers[0] : "cheap",
+);
+const resilient = pool.fallback(["strong", "cheap"]);
+const balanced = pool.loadBalance(["cheap", "strong"]);
+const ensemble = pool.ensemble(["cheap", "strong"]);
+```
+
+The four policies have distinct intent: `routing()` delegates tier selection to a typed application policy, `fallback()` retries the next tier after provider failure, `loadBalance()` rotates through configured tiers, and `ensemble()` asks all tiers and returns either the supplied judge result or the longest response.
+
+## Generic RAG
+
+RAG is provider-neutral and does not assume SQL, a vector vendor, a database schema, or a chat-only application. Inject any retriever that returns documents with a stable `content` field. The same facade can answer directly or become a Core subgraph.
+
+```ts
+import { autoModel, createRAG } from "@langgraph-toolkit/community";
+
+const rag = createRAG({
+  model: autoModel(),
+  retriever: {
+    async retrieve(query, options = {}) {
+      return searchDocuments(query, options.topK ?? 5);
+    },
+  },
+  name: "knowledge-answer",
+});
+
+const answer = await rag.answer("What is the refund policy?");
+console.log(answer.answer, answer.documents);
+
+const retrievalGraph = rag.asSubgraph();
+```
+
+The default model and empty retriever are deterministic development fallbacks. Production applications should inject a model and retriever that match their latency, privacy, and grounding requirements.
+
+## Optional database convenience
+
+Database-specific helpers belong only to `@langgraph-toolkit/community/database`; they are not part of the Community root and are not required for generic workflows. The root remains suitable for classification, extraction, background tasks, retrieval, multi-agent routing, and any other typed workflow.
 
 ## Package boundary
 
-```text
-core
-└── mcp
-    └── community
-        ├── provider inference
-        ├── model and tier registry helpers
-        └── contributor-owned use cases
-```
-
-Community depends on Core and MCP. It does not own MCP transport, generic graph execution, HTTP routes, framework lifecycle, or persistence. Database, retrieval, or provider presets are convenience compositions and must remain replaceable by application-owned graphs.
+| Boundary | Owns | Does not own |
+|---|---|---|
+| Core | State, graph topology, execution, events and interrupts | Providers, HTTP frameworks or database SDKs |
+| MCP | Server declarations, discovery, tools, resources and lifecycle | Domain-specific agents or framework registration |
+| Community | Providers, model policies, RAG and optional compositions | Core execution, transport or persistence drivers |
+| Adapters | Host lifecycle, routes and serialization | Prompt policy or database schema |
 
 ## Development
 
@@ -60,6 +94,8 @@ npm install
 npm run build
 npm test
 ```
+
+Contributors should add typed contracts, TSDoc, deterministic tests, and an independent example for each public policy or provider extension.
 
 ## License
 

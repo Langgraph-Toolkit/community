@@ -1,8 +1,8 @@
-import type {
-  Checkpoint,
-  Checkpointer,
+import {
+  ChatMessage,
+  ChatResult,
+  ChatStreamOptions,
   JsonObject,
-  JsonValue,
   LLMProvider,
 } from "@langgraph-toolkit/core";
 import {
@@ -12,144 +12,86 @@ import {
   type ProviderEnvironment,
 } from "./providers.js";
 
-/** Options for the environment-inferred default model. */
-export interface AutoModelOptions extends CommunityRegistryOptions {
-  readonly tier?: string;
-}
-
 /** A small model pool facade that preserves tier aliases for graph bindings. */
 export interface ModelPool {
   readonly registry: ReturnType<typeof createModelRegistry>;
   get(tier?: string): LLMProvider;
-}
-
-/** Construct the first available provider from environment and fallback settings. */
-export function autoModel(options: AutoModelOptions = {}): LLMProvider {
-  const registry = createModelRegistry(options);
-  return registry.tier(options.tier ?? "strong");
+  routing(policy: (tiers: readonly string[], input: JsonObject) => string): LLMProvider;
+  fallback(tiers: readonly string[]): LLMProvider;
+  loadBalance(tiers: readonly string[]): LLMProvider;
+  ensemble(tiers: readonly string[], judge?: (responses: readonly ChatResult[]) => ChatResult | Promise<ChatResult>): LLMProvider;
 }
 
 /** Construct a tier-aware model pool with inferred cheap and strong defaults. */
 export function createModelPool(options: CommunityRegistryOptions = {}): ModelPool {
   const registry = createModelRegistry(options);
+  const provider = (tier: string): LLMProvider => registry.tier(tier);
   return {
     registry,
-    get: (tier = "strong") => registry.tier(tier),
-  };
-}
-
-/** A typed process-local memory store for development and small workers. */
-export interface AutoMemory {
-  get<T extends JsonObject>(key: string): Promise<T | null>;
-  set<T extends JsonObject>(key: string, value: T): Promise<void>;
-  delete(key: string): Promise<void>;
-}
-
-/** Create a zero-config memory store without selecting a vendor database. */
-export function autoMemory(): AutoMemory {
-  const values = new Map<string, JsonObject>();
-  return {
-    get: async <T extends JsonObject>(key: string): Promise<T | null> => {
-      const value = values.get(key);
-      return value === undefined ? null : value as T;
+    get: (tier = "strong") => provider(tier),
+    routing: (policy) => {
+      const select = (messages: readonly ChatMessage[]): LLMProvider => {
+        const input: JsonObject = {
+          messages: messages.map((message): JsonObject => ({ role: message.role, content: message.content })),
+        };
+        return provider(policy(registry.tiers(), input));
+      };
+      return wrapProvider("routing", (messages, opts) => select(messages).chat(messages, opts), (messages, opts) => select(messages).stream(messages, opts));
     },
-    set: async <T extends JsonObject>(key: string, value: T): Promise<void> => {
-      values.set(key, value);
-    },
-    delete: async (key: string): Promise<void> => {
-      values.delete(key);
-    },
-  };
-}
-
-/** Create a process-local checkpointer for development and contributor tests. */
-export function autoCheckpoint(): Checkpointer {
-  const values = new Map<string, Checkpoint>();
-  return {
-    get: async (threadId) => values.get(threadId) ?? null,
-    put: async (checkpoint) => {
-      values.set(checkpoint.threadId, checkpoint);
-    },
-    list: async (threadId) => {
-      const checkpoint = values.get(threadId);
-      return checkpoint === undefined ? [] : [checkpoint];
-    },
-  };
-}
-
-/** Result of a default guardrail check. */
-export interface GuardrailResult {
-  readonly allowed: boolean;
-  readonly reason?: string;
-}
-
-/** Zero-config guardrail contract; the default policy allows typed values. */
-export interface Guardrails {
-  check(value: JsonValue): Promise<GuardrailResult>;
-}
-
-/** Create permissive guardrails that applications can wrap with policy-specific checks. */
-export function autoGuardrails(): Guardrails {
-  return { check: async () => ({ allowed: true }) };
-}
-
-/** Retry settings used by the default reliability facade. */
-export interface Reliability {
-  readonly attempts: number;
-  readonly backoffMs: number;
-  retry<T>(operation: () => Promise<T>): Promise<T>;
-}
-
-/** Create bounded retry behavior without requiring a queue or vendor SDK. */
-export function autoReliability(options: { readonly attempts?: number; readonly backoffMs?: number } = {}): Reliability {
-  const attempts = Math.max(1, options.attempts ?? 3);
-  const backoffMs = Math.max(0, options.backoffMs ?? 50);
-  return {
-    attempts,
-    backoffMs,
-    retry: async <T>(operation: () => Promise<T>): Promise<T> => {
-      let lastError: Error | undefined;
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        try {
-          return await operation();
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
-          if (attempt + 1 < attempts && backoffMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, backoffMs * (attempt + 1)));
+    fallback: (tiers) => {
+      const names = requireTiers(tiers);
+      const chat = async (messages: readonly ChatMessage[], opts?: ChatStreamOptions): Promise<ChatResult> => {
+        let lastError: Error | undefined;
+        for (const tier of names) {
+          try {
+            return await provider(tier).chat(messages, opts);
+          } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+          }
         }
-      }
-      throw lastError ?? new Error("Operation failed.");
+        throw lastError ?? new Error("Model fallback failed.");
+      };
+      return wrapProvider("fallback", chat);
+    },
+    loadBalance: (tiers) => {
+      const names = requireTiers(tiers);
+      let cursor = 0;
+      const select = (): LLMProvider => {
+        const tier = names[cursor % names.length];
+        cursor += 1;
+        return provider(tier);
+      };
+      return wrapProvider("load-balance", (messages, opts) => select().chat(messages, opts), (messages, opts) => select().stream(messages, opts));
+    },
+    ensemble: (tiers, judge) => {
+      const names = requireTiers(tiers);
+      const chat = async (messages: readonly ChatMessage[], opts?: ChatStreamOptions): Promise<ChatResult> => {
+        const responses = await Promise.all(names.map((tier) => provider(tier).chat(messages, opts)));
+        if (judge) return judge(responses);
+        return responses.reduce((best, response) => response.content.length > best.content.length ? response : best);
+      };
+      return wrapProvider("ensemble", chat);
     },
   };
 }
 
-/** In-memory observability sink suitable for tests and local development. */
-export interface Observability {
-  record(event: JsonObject): void;
-  events(): readonly JsonObject[];
+function requireTiers(tiers: readonly string[]): readonly string[] {
+  if (tiers.length === 0) throw new Error("A model pool policy requires at least one tier.");
+  return tiers;
 }
 
-/** Create a no-dependency observability sink that can be bridged to a vendor later. */
-export function autoObservability(): Observability {
-  const values: JsonObject[] = [];
+function wrapProvider(
+  name: string,
+  chat: (messages: readonly ChatMessage[], opts?: ChatStreamOptions) => Promise<ChatResult>,
+  stream?: (messages: readonly ChatMessage[], opts?: ChatStreamOptions) => AsyncIterable<string>,
+): LLMProvider {
   return {
-    record: (event) => values.push(event),
-    events: () => [...values],
-  };
-}
-
-/** Typed evaluation result for a deterministic local comparison. */
-export interface EvaluationResult {
-  readonly score: number;
-  readonly pass: boolean;
-}
-
-/** Create a deterministic evaluator for fixtures and contributor tests. */
-export function autoEvaluation(): { score(actual: JsonValue, expected: JsonValue): EvaluationResult } {
-  return {
-    score: (actual, expected) => {
-      const pass = JSON.stringify(actual) === JSON.stringify(expected);
-      return { score: pass ? 1 : 0, pass };
-    },
+    name: `community:${name}`,
+    chat,
+    stream: stream ?? (async function* (messages, opts): AsyncIterable<string> {
+      const response = await chat(messages, opts);
+      if (response.content.length > 0) yield response.content;
+    }),
   };
 }
 
@@ -163,30 +105,5 @@ export function autoRag(): Rag {
   return { retrieve: async () => [] };
 }
 
-/** Typed process-local cache with JSON-safe values. */
-export interface Cache {
-  get<T extends JsonValue>(key: string): T | null;
-  set<T extends JsonValue>(key: string, value: T): void;
-  delete(key: string): void;
-}
-
-/** Create a JSON-safe local cache for development and deterministic tests. */
-export function autoCache(): Cache {
-  const values = new Map<string, JsonValue>();
-  return {
-    get: <T extends JsonValue>(key: string): T | null => {
-      const value = values.get(key);
-      return value === undefined ? null : value as T;
-    },
-    set: <T extends JsonValue>(key: string, value: T): void => {
-      values.set(key, value);
-    },
-    delete: (key: string): void => {
-      values.delete(key);
-    },
-  };
-}
-
-/** Re-exported here to keep zero-config option types discoverable from one file. */
+/** Re-exported here to keep provider option types discoverable from one file. */
 export type { EnvReader, ProviderEnvironment };
-

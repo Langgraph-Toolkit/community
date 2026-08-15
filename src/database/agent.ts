@@ -8,7 +8,7 @@ import {
   node,
   reducedValue,
   schema,
-} from "@langgraph-toolkit/core";
+} from "@langgraph-toolkit/core/legacy";
 import { createToolkitRuntime } from "@langgraph-toolkit/core/runtime";
 import { ToolkitModelRegistry } from "../provider-drivers.js";
 import type {

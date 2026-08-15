@@ -1,4 +1,5 @@
-import { schema, tool, type JsonObject, type JsonValue } from "@langgraph-toolkit/core";
+import { schema, tool } from "@langgraph-toolkit/core/legacy";
+import type { JsonObject, JsonValue, ToolDefinition } from "@langgraph-toolkit/core";
 import type { McpDiscovery, McpResourceDescriptor, McpToolDescriptor, McpToolResult } from "@langgraph-toolkit/mcp/advanced";
 import type { McpGateway } from "@langgraph-toolkit/mcp";
 
@@ -157,8 +158,8 @@ function result(value: JsonObject): McpToolResult {
 
 /** Create typed schema and read-only query tools backed by any MCP gateway. */
 export function createDatabaseTools(gateway: McpGateway, options: McpDatabaseToolOptions): {
-  readonly schemaTool: ReturnType<typeof tool<McpDatabaseSchemaArgs, McpDatabaseSchema>>;
-  readonly executeQueryTool: ReturnType<typeof tool<McpDatabaseQueryArgs, McpDatabaseQueryResult>>;
+  readonly schemaTool: ToolDefinition<McpDatabaseSchemaArgs, McpDatabaseSchema>;
+  readonly executeQueryTool: ToolDefinition<McpDatabaseQueryArgs, McpDatabaseQueryResult>;
 } {
   const schemaTool = tool<McpDatabaseSchemaArgs, McpDatabaseSchema>({
     name: "get_schema",

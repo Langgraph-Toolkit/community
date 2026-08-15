@@ -161,7 +161,7 @@ export function planTierResolver(planMap: Record<string, Record<string, string>>
 export class ToolkitModelRegistry implements ModelRegistry {
   /** Cumulative token usage per tier alias. */
   tokenUsage = new Map<string, { input: number; output: number }>();
-  private tiers: Map<string, LLMProvider>;
+  private providersByTier: Map<string, LLMProvider>;
   private configByTier = new Map<string, LLMProviderConfig>();
   private factory: (cfg: LLMProviderConfig) => LLMProvider;
   private meter?: ModelRegistryOptions["meter"];
@@ -169,19 +169,24 @@ export class ToolkitModelRegistry implements ModelRegistry {
   constructor(opts: ModelRegistryOptions) {
     this.factory = defaultProviderFactory;
     this.meter = opts.meter;
-    this.tiers = new Map();
+    this.providersByTier = new Map();
     for (const [alias, cfg] of Object.entries(opts.tiers)) {
       this.configByTier.set(alias, cfg);
-      this.tiers.set(alias, this.factory(cfg));
+      this.providersByTier.set(alias, this.factory(cfg));
     }
   }
 
   tier(alias: string): LLMProvider {
-    const provider = this.tiers.get(alias);
+    const provider = this.providersByTier.get(alias);
     if (!provider) {
       throw new Error(`Unregistered model tier "${alias}". Declare it in the registry (Rule T3).`);
     }
     return provider;
+  }
+
+  /** Return configured tier aliases in deterministic insertion order. */
+  tiers(): readonly string[] {
+    return [...this.providersByTier.keys()];
   }
 
   reconfigure(
@@ -189,11 +194,11 @@ export class ToolkitModelRegistry implements ModelRegistry {
     factory: (cfg: LLMProviderConfig) => LLMProvider = defaultProviderFactory,
   ): void {
     this.factory = factory;
-    this.tiers.clear();
+    this.providersByTier.clear();
     this.configByTier.clear();
     for (const [alias, cfg] of Object.entries(tiers)) {
       this.configByTier.set(alias, cfg);
-      this.tiers.set(alias, factory(cfg));
+      this.providersByTier.set(alias, factory(cfg));
     }
   }
 
