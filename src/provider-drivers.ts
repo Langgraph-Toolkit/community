@@ -186,7 +186,17 @@ export class ToolkitModelRegistry implements ModelRegistry {
     return provider;
   }
 
-  /** Return the Core model facade for an already explicit, configured tier. */
+  /**
+   * Return the Core `Model` facade for an already explicit, configured tier.
+   *
+   * Alias relationship: `model(alias)` and `tier(alias)` resolve the SAME
+   * underlying tier. `tier(alias)` exposes the canonical framework-neutral
+   * `LLMProvider` contract (`.chat`/`.stream`); `model(alias)` wraps that same
+   * provider in the Core `Model` superset, adding `.generate()` (a request-shape
+   * wrapper over `.chat`) and `.structured()` (schema-constrained output).
+   * Prefer `tier(alias)` for framework-neutral code paths and `model(alias)`
+   * only where structured output or the Core request shape is required.
+   */
   model(alias: string): Model {
     return createModel({ name: alias, provider: this.tier(alias) });
   }
