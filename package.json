@@ -1,6 +1,6 @@
 {
   "name": "@langgraph-toolkit/community",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Optional community model provider presets for Langgraph-Toolkit, including Hugging Face and OpenAI-compatible open-source deployments.",
   "type": "module",
   "main": "./dist/index.js",
@@ -32,8 +32,8 @@
     "tgi"
   ],
   "dependencies": {
-    "@langgraph-toolkit/core": "0.2.2",
-    "@langgraph-toolkit/mcp": "0.2.2"
+    "@langgraph-toolkit/core": "0.2.3",
+    "@langgraph-toolkit/mcp": "0.2.3"
   },
   "devDependencies": {
     "@types/node": "^20",
